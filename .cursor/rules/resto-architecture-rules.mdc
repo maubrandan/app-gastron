@@ -1,0 +1,79 @@
+---
+description: Arquitectura del restaurante — idioma, ciclo de pedidos y concurrencia optimista
+alwaysApply: true
+---
+
+# Resto Architecture Rules
+
+## Idioma
+
+- Documentación interna, mensajes de error al cliente y comentarios de lógica compleja: **Español**.
+- Nomenclatura técnica (clases, variables, métodos, tablas): **Inglés**.
+
+```csharp
+// ✅ GOOD
+public void ConfirmForKitchen() { /* Envía el pedido a cocina tras validar el borrador */ }
+throw new DomainException("Otro mozo modificó este pedido. Actualizá la mesa e intentá de nuevo.");
+```
+
+```typescript
+// ✅ GOOD
+this.toast.warn('La mesa fue actualizada por otro mozo. Los datos se recargaron.');
+```
+
+## Flujo de negocio lineal
+
+Respeta el ciclo de vida del pedido sin desviaciones:
+
+```
+Borrador (Mozo) → ConfirmadoEnCocina (Encargado) → Cerrado (Encargado)
+```
+
+- **Borrador**: solo el mozo crea y edita ítems.
+- **ConfirmadoEnCocina**: solo el encargado confirma el envío a cocina.
+- **Cerrado**: solo el encargado cierra y factura; se libera la mesa.
+
+**Prohibido**: estados intermedios controlados por cocina, transiciones desde cocina, o flujos alternativos (ej. `InPreparation`, `Cooking`, `ServedByKitchen`).
+
+```csharp
+// ❌ BAD — cocina no muta estado del pedido
+public void MarkAsCooking() { Status = OrderStatus.Cooking; }
+
+// ✅ GOOD — transición semántica en el aggregate
+public void ConfirmForKitchen() { /* Borrador → ConfirmadoEnCocina */ }
+public void CloseAndBill() { /* ConfirmadoEnCocina → Cerrado */ }
+```
+
+## Concurrencia optimista (Mesas y Pedidos)
+
+Al crear o modificar **command handlers** o **repositorios** de `Table` / `Order`:
+
+### Backend (.NET / EF Core)
+
+- Incluir `byte[] RowVersion` en entidades y DTOs de escritura.
+- Pasar `RowVersion` en updates; capturar `DbUpdateConcurrencyException` y traducir a excepción de dominio en español.
+
+```csharp
+// ✅ GOOD
+public byte[] RowVersion { get; private set; }
+
+// En el handler
+catch (DbUpdateConcurrencyException)
+{
+    throw new ConcurrencyConflictException("Otro usuario modificó este registro. Recargá e intentá de nuevo.");
+}
+```
+
+### Frontend (Angular)
+
+- Enviar `rowVersion` en cada mutación de mesa/pedido.
+- Ante colisión (409 / `ConcurrencyConflict`): recargar datos y mostrar alerta **no intrusiva** (toast o banner discreto), nunca modal bloqueante para mozos en salón.
+
+```typescript
+// ✅ GOOD
+if (error.status === 409) {
+  this.reloadTableState();
+  this.notificationService.showConcurrencyWarning();
+  return;
+}
+```

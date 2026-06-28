@@ -1,0 +1,131 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-display: 'DM Sans', system-ui, -apple-system, sans-serif;
+
+  --color-slate-850: #1a2332;
+
+  --color-surface-salon: #f1f5f9;
+  --color-surface-card: #ffffff;
+  --color-surface-control: #0f172a;
+  --color-surface-control-card: #1e293b;
+  --color-surface-kitchen: #020617;
+
+  --color-status-free: #10b981;
+  --color-status-free-bg: #ecfdf5;
+  --color-status-occupied: #3b82f6;
+  --color-status-occupied-bg: #eff6ff;
+  --color-status-waiting: #f59e0b;
+  --color-status-waiting-bg: #fffbeb;
+
+  --color-action-primary: #2563eb;
+  --color-action-success: #059669;
+  --color-action-danger: #e11d48;
+
+  --radius-card: 0.75rem;
+  --radius-pill: 9999px;
+
+  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.08);
+  --shadow-elevated: 0 10px 25px -5px rgb(0 0 0 / 0.12), 0 4px 6px -4px rgb(0 0 0 / 0.08);
+  --shadow-glow-warning: 0 0 20px rgb(245 158 11 / 0.25);
+  --shadow-glow-critical: 0 0 20px rgb(225 29 72 / 0.3);
+
+  --animate-fade-in: fade-in 250ms ease-out;
+  --animate-slide-down: slide-down 300ms ease-out;
+  --animate-scale-tap: scale-tap 150ms ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scale-tap {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(0.97);
+  }
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+.touch-target {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+}
+
+.touch-target:active {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .touch-target:active {
+    transform: none;
+  }
+}
+
+@media print {
+  /* Ocultar toda la app; solo el ticket queda visible */
+  body * {
+    visibility: hidden;
+  }
+
+  app-receipt-print,
+  app-receipt-print * {
+    visibility: visible;
+  }
+
+  app-receipt-print {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 80mm;
+  }
+
+  body {
+    background: white !important;
+    margin: 0;
+  }
+
+  @page {
+    margin: 4mm;
+  }
+}
