@@ -3,6 +3,8 @@ import { Router } from '@angular/router';
 import { AppRole, LoginResponse, StaffUser, UserProfile } from '../../shared/models/auth.models';
 import { DemoStoreService } from './demo-store.service';
 
+export const DEMO_PASSWORD = 'Resto123!';
+
 interface StoredAuth {
   token: string;
   expiresAt: string;
@@ -28,9 +30,9 @@ export class MockAuthService {
     return true;
   });
 
-  async login(email: string, _password: string): Promise<void> {
+  async login(email: string, password: string): Promise<void> {
     const user = this.store.findUserByEmail(email);
-    if (!user) {
+    if (!user || password !== DEMO_PASSWORD) {
       throw new Error('Credenciales inválidas.');
     }
 

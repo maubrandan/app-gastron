@@ -63,7 +63,12 @@ import { environment } from '../../../environments/environment';
         </form>
 
         <p class="mt-6 text-center text-xs text-slate-500">
-          Demo: mozo1@resto.local / encargado@resto.local / kitchen@resto.local
+          @if (environment.demoMode) {
+            Contraseña demo: <strong>Resto123!</strong><br />
+            mozo1@resto.local · encargado@resto.local · kitchen@resto.local · admin@resto.local
+          } @else {
+            Demo: mozo1@resto.local / encargado@resto.local / kitchen@resto.local
+          }
         </p>
       </div>
     </div>
