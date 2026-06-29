@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService } from '../../core/auth/auth.service';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-login',
@@ -15,6 +16,12 @@ import { AuthService } from '../../core/auth/auth.service';
           <h1 class="font-display text-2xl font-bold text-slate-900">Resto</h1>
           <p class="mt-2 text-sm text-slate-600">Ingresá con tu cuenta para continuar</p>
         </div>
+
+        @if (environment.demoMode) {
+          <div class="mb-4 rounded-[var(--radius-card)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            Modo demo: datos en memoria, sin servidor. Los cambios se pierden al recargar.
+          </div>
+        }
 
         <form [formGroup]="form" (ngSubmit)="submit()" class="space-y-4">
           <div>
@@ -66,6 +73,8 @@ export class LoginComponent {
   private readonly auth = inject(AuthService);
   private readonly fb = inject(FormBuilder);
 
+  readonly environment = environment;
+
   readonly submitting = signal(false);
   readonly errorMessage = signal<string | null>(null);
 
@@ -86,7 +95,9 @@ export class LoginComponent {
       const message =
         error instanceof HttpErrorResponse && error.error?.error
           ? String(error.error.error)
-          : 'No se pudo iniciar sesión. Verificá tus credenciales.';
+          : error instanceof Error
+            ? error.message
+            : 'No se pudo iniciar sesión. Verificá tus credenciales.';
       this.errorMessage.set(message);
     } finally {
       this.submitting.set(false);

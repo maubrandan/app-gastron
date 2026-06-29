@@ -3,6 +3,7 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import { AppRole } from '../models/auth.models';
 import { ToastComponent } from './toast.component';
+import { environment } from '../../../environments/environment';
 
 interface NavLink {
   path: string;
@@ -22,6 +23,14 @@ interface NavLink {
     <header class="border-b border-slate-200 bg-surface-card shadow-card">
       <nav class="mx-auto flex max-w-7xl items-center gap-1 px-4 py-3">
         <span class="mr-4 font-display text-lg font-bold text-slate-900">Resto</span>
+
+        @if (environment.demoMode) {
+          <span
+            class="mr-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-800"
+          >
+            Demo
+          </span>
+        }
 
         @for (link of visibleLinks(); track link.path) {
           <a
@@ -74,6 +83,7 @@ interface NavLink {
 })
 export class AppShellComponent {
   readonly auth = inject(AuthService);
+  readonly environment = environment;
 
   private readonly allLinks: NavLink[] = [
     { path: '/mozo', label: 'Mozo', icon: '🍽️', roles: [AppRole.Waiter, AppRole.Manager, AppRole.Admin] },

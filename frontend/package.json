@@ -5,6 +5,8 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
+    "build:demo": "ng build --configuration demo && node scripts/postbuild-demo.mjs",
+    "start:demo": "ng serve --configuration demo",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"
   },
