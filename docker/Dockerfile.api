@@ -1,0 +1,23 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+COPY src/Resto.Domain/Resto.Domain.csproj src/Resto.Domain/
+COPY src/Resto.Application/Resto.Application.csproj src/Resto.Application/
+COPY src/Resto.Infrastructure/Resto.Infrastructure.csproj src/Resto.Infrastructure/
+COPY src/Resto.Api/Resto.Api.csproj src/Resto.Api/
+
+RUN dotnet restore src/Resto.Api/Resto.Api.csproj
+
+COPY src/ ./src/
+
+RUN dotnet publish src/Resto.Api/Resto.Api.csproj -c Release -o /app/publish /p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+WORKDIR /app
+
+ENV ASPNETCORE_URLS=http://+:8080
+EXPOSE 8080
+
+COPY --from=build /app/publish .
+
+ENTRYPOINT ["dotnet", "Resto.Api.dll"]

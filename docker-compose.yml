@@ -1,0 +1,34 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: Y
+      MSSQL_SA_PASSWORD: Resto_Dev123!
+    ports:
+      - "1433:1433"
+    volumes:
+      - resto-sql-data:/var/opt/mssql
+    healthcheck:
+      test: /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P Resto_Dev123! -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    ports:
+      - "5019:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Docker
+      ConnectionStrings__DefaultConnection: Server=sqlserver,1433;Database=RestoDb;User Id=sa;Password=Resto_Dev123!;TrustServerCertificate=True
+      Cors__Origins__0: http://localhost:4200
+      Jwt__Key: RestoDevSecretKey_ChangeInProduction_Min32Chars!
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+
+volumes:
+  resto-sql-data:

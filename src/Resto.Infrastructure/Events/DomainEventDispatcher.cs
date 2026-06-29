@@ -29,28 +29,38 @@ public sealed class DomainEventDispatcher : IDomainEventDispatcher
     {
         foreach (var domainEvent in domainEvents)
         {
+            var eventType = domainEvent.GetType().Name;
+
             try
             {
-                switch (domainEvent)
-                {
-                    case OrderSentToKitchenDomainEvent sent:
-                        await _orderSentHandler.HandleAsync(sent, cancellationToken);
-                        break;
-                    case OrderClosedDomainEvent closed:
-                        await _orderClosedHandler.HandleAsync(closed, cancellationToken);
-                        break;
-                    case TableStateChangedDomainEvent tableChanged:
-                        await _tableStateHandler.HandleAsync(tableChanged, cancellationToken);
-                        break;
-                    default:
-                        _logger.LogWarning("Evento de dominio no manejado: {EventType}", domainEvent.GetType().Name);
-                        break;
-                }
+                await EventDispatchRetry.ExecuteAsync(
+                    ct => DispatchSingleAsync(domainEvent, ct),
+                    _logger,
+                    eventType,
+                    cancellationToken);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error al despachar evento {EventType}", domainEvent.GetType().Name);
+                _logger.LogError(
+                    ex,
+                    "Error al despachar evento {EventType} tras agotar reintentos",
+                    eventType);
             }
         }
+    }
+
+    private Task DispatchSingleAsync(IDomainEvent domainEvent, CancellationToken cancellationToken) =>
+        domainEvent switch
+        {
+            OrderSentToKitchenDomainEvent sent => _orderSentHandler.HandleAsync(sent, cancellationToken),
+            OrderClosedDomainEvent closed => _orderClosedHandler.HandleAsync(closed, cancellationToken),
+            TableStateChangedDomainEvent tableChanged => _tableStateHandler.HandleAsync(tableChanged, cancellationToken),
+            _ => LogUnhandledAsync(domainEvent),
+        };
+
+    private Task LogUnhandledAsync(IDomainEvent domainEvent)
+    {
+        _logger.LogWarning("Evento de dominio no manejado: {EventType}", domainEvent.GetType().Name);
+        return Task.CompletedTask;
     }
 }

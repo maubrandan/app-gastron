@@ -1,5 +1,14 @@
 import { DatePipe, NgClass } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  DestroyRef,
+  effect,
+  inject,
+  OnInit,
+  signal,
+} from '@angular/core';
 import { RestoApiService } from '../../core/api/resto-api.service';
 import { KitchenAlertService } from '../../core/kitchen/kitchen-alert.service';
 import { SignalRService } from '../../core/signalr/signalr.service';
@@ -8,6 +17,7 @@ import { ConnectionPillComponent } from '../../shared/ui/connection-pill.compone
 import { KitchenOrderCardComponent } from './kitchen-order-card.component';
 
 const CATEGORY_STORAGE_KEY = 'resto.kitchen.category';
+const POLL_INTERVAL_MS = 20_000;
 
 @Component({
   selector: 'app-kitchen-monitor',
@@ -66,7 +76,7 @@ const CATEGORY_STORAGE_KEY = 'resto.kitchen.category';
 
       @if (connectionState() !== 'connected') {
         <p class="mb-4 rounded-[var(--radius-card)] border border-amber-500/30 bg-amber-950/20 px-4 py-2 text-center text-sm text-amber-400">
-          Sin conexión en tiempo real — la información puede estar desactualizada.
+          Sin conexión en tiempo real — sincronizando cada {{ pollIntervalSeconds }} s.
         </p>
       }
 
@@ -89,6 +99,7 @@ const CATEGORY_STORAGE_KEY = 'resto.kitchen.category';
 export class KitchenMonitorComponent implements OnInit {
   private readonly api = inject(RestoApiService);
   private readonly signalR = inject(SignalRService);
+  private readonly destroyRef = inject(DestroyRef);
   readonly alerts = inject(KitchenAlertService);
 
   readonly orders = signal<KitchenOrder[]>([]);
@@ -97,6 +108,9 @@ export class KitchenMonitorComponent implements OnInit {
   readonly newOrderIds = signal<Set<string>>(new Set());
   readonly now = signal(new Date());
   readonly connectionState = this.signalR.connectionState;
+  readonly pollIntervalSeconds = POLL_INTERVAL_MS / 1000;
+
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
 
   readonly visibleOrders = computed(() => {
     const category = this.selectedCategory();
@@ -107,13 +121,29 @@ export class KitchenMonitorComponent implements OnInit {
     return all
       .map((order) => ({
         ...order,
-        lines: order.lines.filter((l) => l.category === category),
+        lines: order.lines.filter((line) => line.category === category),
       }))
       .filter((order) => order.lines.length > 0);
   });
 
+  constructor() {
+    effect(() => {
+      if (this.connectionState() === 'connected') {
+        this.stopPolling();
+      } else {
+        this.startPolling();
+      }
+    });
+
+    this.destroyRef.onDestroy(() => {
+      this.stopPolling();
+    });
+  }
+
   ngOnInit(): void {
-    setInterval(() => this.now.set(new Date()), 60_000);
+    const clockTimer = setInterval(() => this.now.set(new Date()), 60_000);
+    this.destroyRef.onDestroy(() => clearInterval(clockTimer));
+
     void this.bootstrap();
   }
 
@@ -141,7 +171,7 @@ export class KitchenMonitorComponent implements OnInit {
     ]);
 
     this.orders.set(initial);
-    this.categories.set([...new Set(products.map((p) => p.category))].sort());
+    this.categories.set([...new Set(products.map((product) => product.category))].sort());
 
     await this.signalR.connectKitchen({
       onOrderAdded: (order) => {
@@ -149,14 +179,14 @@ export class KitchenMonitorComponent implements OnInit {
         this.markOrderAsNew(order.id);
 
         this.orders.update((current) => {
-          if (current.some((o) => o.id === order.id)) return current;
+          if (current.some((entry) => entry.id === order.id)) return current;
           return [...current, order].sort(
             (a, b) => new Date(a.sentToKitchenAt).getTime() - new Date(b.sentToKitchenAt).getTime(),
           );
         });
       },
       onOrderRemoved: (orderId) => {
-        this.orders.update((current) => current.filter((o) => o.id !== orderId));
+        this.orders.update((current) => current.filter((entry) => entry.id !== orderId));
         this.newOrderIds.update((current) => {
           const next = new Set(current);
           next.delete(orderId);
@@ -164,6 +194,34 @@ export class KitchenMonitorComponent implements OnInit {
         });
       },
     });
+  }
+
+  private startPolling(): void {
+    if (this.pollTimer) {
+      return;
+    }
+
+    void this.syncOrdersFromApi();
+    this.pollTimer = setInterval(() => void this.syncOrdersFromApi(), POLL_INTERVAL_MS);
+  }
+
+  private stopPolling(): void {
+    if (!this.pollTimer) {
+      return;
+    }
+
+    clearInterval(this.pollTimer);
+    this.pollTimer = null;
+    void this.syncOrdersFromApi();
+  }
+
+  private async syncOrdersFromApi(): Promise<void> {
+    try {
+      const orders = await this.api.getActiveKitchenOrders();
+      this.orders.set(orders);
+    } catch {
+      // Fallo silencioso en polling de respaldo.
+    }
   }
 
   private markOrderAsNew(orderId: string): void {

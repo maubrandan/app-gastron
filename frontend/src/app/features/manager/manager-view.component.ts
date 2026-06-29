@@ -1,10 +1,12 @@
 import { DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
-import { HttpErrorResponse } from '@angular/common/http';
 import { RestoApiService } from '../../core/api/resto-api.service';
+import { HttpErrorReporter } from '../../core/http/http-error-reporter.service';
 import { NotificationService } from '../../core/notifications/notification.service';
+import { SalonStateService } from '../../core/salon/salon-state.service';
 import { SignalRService } from '../../core/signalr/signalr.service';
-import { KitchenOrder, OrderDetail, ReceiptType, TableState } from '../../shared/models/resto.models';
+import { KitchenOrder, OrderDetail, PaymentMethod, ReceiptType, TableState } from '../../shared/models/resto.models';
+import { paymentMethodLabel } from '../../shared/utils/payment-method-label';
 import { ReceiptPrintComponent } from '../../shared/ui/receipt-print.component';
 import { elapsedMinutes, resolveKitchenUrgency } from '../../shared/utils/kitchen-urgency';
 import { ActionButtonComponent } from '../../shared/ui/action-button.component';
@@ -52,7 +54,7 @@ import { TableTileComponent } from '../../shared/ui/table-tile.component';
                   variant="control"
                   [number]="table.number"
                   [status]="table.status"
-                  [selected]="selectedTable()?.number === table.number"
+                  [selected]="salon.selectedTable()?.number === table.number"
                   (selectedChange)="selectTable(table)"
                 />
               }
@@ -62,13 +64,13 @@ import { TableTileComponent } from '../../shared/ui/table-tile.component';
 
         <div class="space-y-6">
           <div class="rounded-[var(--radius-card)] border border-slate-700/50 bg-surface-control-card p-4 shadow-card">
-            @if (order(); as currentOrder) {
+            @if (salon.order(); as currentOrder) {
               <div class="mb-3 flex flex-wrap items-center gap-2">
                 <h2 class="font-display text-lg font-semibold">Pedido Mesa {{ currentOrder.tableNumber }}</h2>
                 <app-status-badge [status]="currentOrder.status" />
               </div>
 
-              @if (selectedTable()?.status === 'EsperandoCuenta') {
+              @if (salon.selectedTable()?.status === 'EsperandoCuenta') {
                 <div class="mb-4 rounded-[var(--radius-card)] border border-amber-500/50 bg-amber-950/30 px-3 py-2 text-sm text-amber-200 animate-pulse">
                   Esta mesa solicitó la cuenta — priorizar cierre.
                 </div>
@@ -91,15 +93,35 @@ import { TableTileComponent } from '../../shared/ui/table-tile.component';
               }
 
               @if (currentOrder.status === 'ConfirmadoEnCocina') {
+                @if (!cashShift()) {
+                  <div class="mb-4 rounded-[var(--radius-card)] border border-red-500/50 bg-red-950/30 px-3 py-2 text-sm text-red-200">
+                    No hay turno de caja abierto. Abrí un turno en la vista de Caja antes de facturar.
+                  </div>
+                }
+
+                <label class="mb-4 flex flex-col gap-1 text-sm">
+                  <span class="text-slate-400">Medio de pago</span>
+                  <select
+                    class="rounded-[var(--radius-card)] border border-slate-600 bg-slate-900 px-3 py-2 text-slate-100"
+                    [value]="selectedPaymentMethod()"
+                    (change)="onPaymentMethodChange($event)"
+                  >
+                    <option value="Cash">Efectivo</option>
+                    <option value="Card">Tarjeta</option>
+                    <option value="Transfer">Transferencia</option>
+                  </select>
+                </label>
+
                 <app-action-button
                   variant="danger"
                   [loading]="actionLoading()"
+                  [disabled]="!cashShift()"
                   (action)="closeOrder()"
                 >
                   Cerrar y facturar
                 </app-action-button>
               }
-            } @else if (selectedTable()) {
+            } @else if (salon.selectedTable()) {
               <app-empty-state
                 message="No hay pedido activo en esta mesa"
                 icon="📋"
@@ -135,19 +157,20 @@ import { TableTileComponent } from '../../shared/ui/table-tile.component';
 export class ManagerViewComponent implements OnInit {
   private readonly api = inject(RestoApiService);
   readonly signalR = inject(SignalRService);
+  readonly salon = inject(SalonStateService);
   private readonly notifications = inject(NotificationService);
+  private readonly httpErrors = inject(HttpErrorReporter);
 
-  readonly tables = signal<TableState[]>([]);
-  readonly selectedTable = signal<TableState | null>(null);
-  readonly order = signal<OrderDetail | null>(null);
   readonly kitchenOrders = signal<KitchenOrder[]>([]);
   readonly loading = signal(true);
   readonly actionLoading = signal(false);
   readonly printOrder = signal<OrderDetail | null>(null);
   readonly printType = signal<ReceiptType>('kitchen');
+  readonly cashShift = signal<{ id: string } | null>(null);
+  readonly selectedPaymentMethod = signal<PaymentMethod>('Cash');
 
   readonly sortedTables = computed(() =>
-    [...this.tables()].sort((a, b) => {
+    [...this.salon.tables()].sort((a, b) => {
       if (a.status === 'EsperandoCuenta' && b.status !== 'EsperandoCuenta') return -1;
       if (b.status === 'EsperandoCuenta' && a.status !== 'EsperandoCuenta') return 1;
       return a.number - b.number;
@@ -156,8 +179,7 @@ export class ManagerViewComponent implements OnInit {
 
   readonly sortedKitchenOrders = computed(() =>
     [...this.kitchenOrders()].sort((a, b) => {
-      const urgencyDiff =
-        urgencyScore(b.sentToKitchenAt) - urgencyScore(a.sentToKitchenAt);
+      const urgencyDiff = urgencyScore(b.sentToKitchenAt) - urgencyScore(a.sentToKitchenAt);
       if (urgencyDiff !== 0) return urgencyDiff;
       return new Date(a.sentToKitchenAt).getTime() - new Date(b.sentToKitchenAt).getTime();
     }),
@@ -165,84 +187,86 @@ export class ManagerViewComponent implements OnInit {
 
   ngOnInit(): void {
     void this.load();
-    void this.signalR.connectSalon((table) => {
-      this.tables.update((current) =>
-        current.map((t) => (t.number === table.number ? table : t)),
-      );
-      const selected = this.selectedTable();
-      if (selected?.number === table.number) {
-        this.selectedTable.set(table);
-      }
-    });
+    void this.loadCashShift();
+    void this.signalR.connectSalon((table) => this.salon.applyTableUpdate(table));
     void this.signalR.connectKitchen({
       onOrderAdded: (order) => {
         this.kitchenOrders.update((current) =>
-          current.some((o) => o.id === order.id) ? current : [...current, order],
+          current.some((entry) => entry.id === order.id) ? current : [...current, order],
         );
       },
       onOrderRemoved: (orderId) => {
-        this.kitchenOrders.update((current) => current.filter((o) => o.id !== orderId));
+        this.kitchenOrders.update((current) => current.filter((entry) => entry.id !== orderId));
       },
     });
   }
 
-  async selectTable(table: TableState): Promise<void> {
-    this.selectedTable.set(table);
-
-    if (table.status === 'Libre') {
-      this.order.set(null);
-      return;
-    }
-
-    try {
-      this.order.set(await this.api.getOrderByTable(table.number));
-    } catch (error) {
-      this.handleError(error, 'No se pudo cargar el pedido.');
-    }
+  selectTable(table: TableState): Promise<void> {
+    return this.salon.selectTable(table);
   }
 
   async confirmOrder(): Promise<void> {
-    const current = this.order();
+    const current = this.salon.order();
     if (!current) return;
 
     this.actionLoading.set(true);
     try {
       await this.api.confirmForKitchen(current.id, current.rowVersion);
-      await this.refreshAfterMutation(current.tableNumber);
+      await this.salon.refreshAfterMutation(current.tableNumber);
       this.notifications.showSuccess('Pedido enviado a cocina.');
-      const confirmed = this.order();
+      const confirmed = this.salon.order();
       if (confirmed) {
         this.triggerPrint('kitchen', confirmed);
       }
     } catch (error) {
-      this.handleError(error, 'No se pudo confirmar el pedido.');
-      await this.refreshAfterMutation(current.tableNumber);
+      this.httpErrors.report(error, 'No se pudo confirmar el pedido.');
+      await this.salon.refreshAfterMutation(current.tableNumber);
     } finally {
       this.actionLoading.set(false);
     }
   }
 
+  onPaymentMethodChange(event: Event): void {
+    this.selectedPaymentMethod.set((event.target as HTMLSelectElement).value as PaymentMethod);
+  }
+
   async closeOrder(): Promise<void> {
-    const current = this.order();
-    const table = this.selectedTable();
+    const current = this.salon.order();
+    const table = this.salon.selectedTable();
     if (!current || !table) return;
 
     this.actionLoading.set(true);
     try {
       const orderId = current.id;
-      await this.api.closeAndBill(current.id, current.rowVersion, table.rowVersion);
+      await this.api.closeAndBill(
+        current.id,
+        current.rowVersion,
+        table.rowVersion,
+        this.selectedPaymentMethod(),
+      );
       const closed = await this.api.getOrderById(orderId);
-      await this.refreshAfterMutation(current.tableNumber);
-      this.order.set(null);
-      this.notifications.showSuccess('Mesa cerrada y facturada.');
+      await this.salon.refreshAfterMutation(current.tableNumber);
+      this.salon.order.set(null);
+      this.notifications.showSuccess(
+        `Mesa cerrada y facturada (${paymentMethodLabel(this.selectedPaymentMethod())}).`,
+      );
       if (closed) {
         this.triggerPrint('bill', closed);
       }
     } catch (error) {
-      this.handleError(error, 'No se pudo cerrar el pedido.');
-      await this.refreshAfterMutation(current.tableNumber);
+      this.httpErrors.report(error, 'No se pudo cerrar el pedido.');
+      await this.salon.refreshAfterMutation(current.tableNumber);
     } finally {
       this.actionLoading.set(false);
+    }
+  }
+
+  private async loadCashShift(): Promise<void> {
+    try {
+      const shift = await this.api.getCurrentCashShift();
+      this.cashShift.set(shift ? { id: shift.id } : null);
+    } catch {
+      this.cashShift.set(null);
     }
   }
 
@@ -253,41 +277,19 @@ export class ManagerViewComponent implements OnInit {
         this.api.getTables(),
         this.api.getActiveKitchenOrders(),
       ]);
-      this.tables.set(tables);
+      this.salon.tables.set(tables);
       this.kitchenOrders.set(kitchen);
     } catch (error) {
-      this.handleError(error, 'No se pudieron cargar los datos.');
+      this.httpErrors.report(error, 'No se pudieron cargar los datos.');
     } finally {
       this.loading.set(false);
     }
-  }
-
-  private async refreshAfterMutation(tableNumber: number): Promise<void> {
-    this.tables.set(await this.api.getTables());
-    const table = this.tables().find((t) => t.number === tableNumber) ?? null;
-    this.selectedTable.set(table);
-
-    if (table?.status === 'Libre') {
-      this.order.set(null);
-      return;
-    }
-
-    this.order.set(await this.api.getOrderByTable(tableNumber));
   }
 
   private triggerPrint(type: ReceiptType, order: OrderDetail): void {
     this.printType.set(type);
     this.printOrder.set(order);
     setTimeout(() => window.print(), 150);
-  }
-
-  private handleError(error: unknown, fallback: string): void {
-    if (error instanceof HttpErrorResponse && error.status === 409) return;
-    const message =
-      error instanceof HttpErrorResponse && error.error?.error
-        ? String(error.error.error)
-        : fallback;
-    this.notifications.showError(message);
   }
 }
 

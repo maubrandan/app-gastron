@@ -6,21 +6,19 @@ import {
   ClosedOrderSummary,
   CreateOrderResponse,
   DailySummary,
+  CashShiftDetail,
   KitchenOrder,
   OrderDetail,
+  PaymentMethod,
   Product,
   TableState,
 } from '../../shared/models/resto.models';
-import { NotificationService } from '../notifications/notification.service';
 
 @Injectable({ providedIn: 'root' })
 export class RestoApiService {
   private readonly baseUrl = environment.apiUrl;
 
-  constructor(
-    private readonly http: HttpClient,
-    private readonly notifications: NotificationService,
-  ) {}
+  constructor(private readonly http: HttpClient) {}
 
   getTables(): Promise<TableState[]> {
     return firstValueFrom(this.http.get<TableState[]>(`${this.baseUrl}/tables`));
@@ -93,13 +91,11 @@ export class RestoApiService {
   }
 
   createOrder(tableNumber: number, tableRowVersion: string): Promise<CreateOrderResponse> {
-    return this.handleMutation(
-      firstValueFrom(
-        this.http.post<CreateOrderResponse>(`${this.baseUrl}/orders`, {
-          tableNumber,
-          tableRowVersion,
-        }),
-      ),
+    return firstValueFrom(
+      this.http.post<CreateOrderResponse>(`${this.baseUrl}/orders`, {
+        tableNumber,
+        tableRowVersion,
+      }),
     );
   }
 
@@ -110,66 +106,77 @@ export class RestoApiService {
     notes: string | null,
     rowVersion: string,
   ): Promise<string> {
-    return this.handleMutation(
-      firstValueFrom(
-        this.http.post<{ rowVersion: string }>(`${this.baseUrl}/orders/${orderId}/lines`, {
-          productId,
-          quantity,
-          notes,
-          rowVersion,
-        }),
-      ).then((r) => r.rowVersion),
-    );
+    return firstValueFrom(
+      this.http.post<{ rowVersion: string }>(`${this.baseUrl}/orders/${orderId}/lines`, {
+        productId,
+        quantity,
+        notes,
+        rowVersion,
+      }),
+    ).then((r) => r.rowVersion);
   }
 
   removeOrderLine(orderId: string, lineId: string, rowVersion: string): Promise<string> {
-    return this.handleMutation(
-      firstValueFrom(
-        this.http.request<{ rowVersion: string }>('DELETE', `${this.baseUrl}/orders/${orderId}/lines/${lineId}`, {
-          body: { rowVersion },
-        }),
-      ).then((r) => r.rowVersion),
-    );
+    return firstValueFrom(
+      this.http.request<{ rowVersion: string }>('DELETE', `${this.baseUrl}/orders/${orderId}/lines/${lineId}`, {
+        body: { rowVersion },
+      }),
+    ).then((r) => r.rowVersion);
   }
 
   confirmForKitchen(orderId: string, rowVersion: string): Promise<void> {
-    return this.handleMutation(
-      firstValueFrom(
-        this.http.post(`${this.baseUrl}/orders/${orderId}/confirm-for-kitchen`, { rowVersion }),
-      ).then(() => undefined),
-    );
+    return firstValueFrom(
+      this.http.post(`${this.baseUrl}/orders/${orderId}/confirm-for-kitchen`, { rowVersion }),
+    ).then(() => undefined);
   }
 
-  closeAndBill(orderId: string, orderRowVersion: string, tableRowVersion: string): Promise<void> {
-    return this.handleMutation(
-      firstValueFrom(
-        this.http.post(`${this.baseUrl}/orders/${orderId}/close-and-bill`, {
-          orderRowVersion,
-          tableRowVersion,
-        }),
-      ).then(() => undefined),
-    );
+  closeAndBill(
+    orderId: string,
+    orderRowVersion: string,
+    tableRowVersion: string,
+    paymentMethod: PaymentMethod,
+  ): Promise<void> {
+    return firstValueFrom(
+      this.http.post(`${this.baseUrl}/orders/${orderId}/close-and-bill`, {
+        orderRowVersion,
+        tableRowVersion,
+        paymentMethod,
+      }),
+    ).then(() => undefined);
+  }
+
+  getCurrentCashShift(): Promise<CashShiftDetail | null> {
+    return firstValueFrom(
+      this.http.get<CashShiftDetail>(`${this.baseUrl}/cash-register/shifts/current`, {
+        observe: 'response',
+      }),
+    )
+      .then((response) => (response.status === 204 || response.body === null ? null : response.body))
+      .catch((error: HttpErrorResponse) => (error.status === 404 ? null : Promise.reject(error)));
+  }
+
+  openCashShift(openingFloat: number): Promise<string> {
+    return firstValueFrom(
+      this.http.post<{ shiftId: string }>(`${this.baseUrl}/cash-register/shifts/open`, {
+        openingFloat,
+      }),
+    ).then((r) => r.shiftId);
+  }
+
+  closeCashShift(shiftId: string, closingCashCounted: number): Promise<void> {
+    return firstValueFrom(
+      this.http.post(`${this.baseUrl}/cash-register/shifts/${shiftId}/close`, {
+        closingCashCounted,
+      }),
+    ).then(() => undefined);
   }
 
   requestBill(orderId: string, orderRowVersion: string, tableRowVersion: string): Promise<void> {
-    return this.handleMutation(
-      firstValueFrom(
-        this.http.post(`${this.baseUrl}/orders/${orderId}/request-bill`, {
-          orderRowVersion,
-          tableRowVersion,
-        }),
-      ).then(() => undefined),
-    );
-  }
-
-  private async handleMutation<T>(promise: Promise<T>): Promise<T> {
-    try {
-      return await promise;
-    } catch (error) {
-      if (error instanceof HttpErrorResponse && error.status === 409) {
-        this.notifications.showConcurrencyWarning();
-      }
-      throw error;
-    }
+    return firstValueFrom(
+      this.http.post(`${this.baseUrl}/orders/${orderId}/request-bill`, {
+        orderRowVersion,
+        tableRowVersion,
+      }),
+    ).then(() => undefined);
   }
 }

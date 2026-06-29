@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Resto.Domain.CashRegister;
 using Resto.Domain.Orders;
+using Resto.Domain.Payments;
 using Resto.Domain.Products;
 using Resto.Domain.Tables;
 using Resto.Infrastructure.Identity;
@@ -16,6 +18,8 @@ public sealed class RestoDbContext : IdentityDbContext<ApplicationUser, Identity
     public DbSet<OrderLine> OrderLines => Set<OrderLine>();
     public DbSet<Table> Tables => Set<Table>();
     public DbSet<Product> Products => Set<Product>();
+    public DbSet<CashRegisterShift> CashRegisterShifts => Set<CashRegisterShift>();
+    public DbSet<Payment> Payments => Set<Payment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

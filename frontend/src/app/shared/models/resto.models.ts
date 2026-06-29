@@ -1,3 +1,5 @@
+export type PaymentMethod = 'Cash' | 'Card' | 'Transfer';
+
 export interface KitchenOrderLine {
   id: string;
   productName: string;
@@ -40,6 +42,7 @@ export interface OrderDetail {
   createdAt: string;
   sentToKitchenAt: string | null;
   closedAt: string | null;
+  paymentMethod: PaymentMethod | null;
   lines: OrderLine[];
 }
 
@@ -76,6 +79,25 @@ export interface ClosedOrderSummary {
   total: number;
   closedAt: string;
   lineCount: number;
+  paymentMethod: PaymentMethod | null;
+}
+
+export interface CashShiftSummary {
+  paymentCount: number;
+  totalCash: number;
+  totalCard: number;
+  totalTransfer: number;
+  totalRevenue: number;
+  expectedCash: number;
+}
+
+export interface CashShiftDetail {
+  id: string;
+  openedAt: string;
+  openedByUserId: string;
+  openingFloat: number;
+  status: string;
+  summary: CashShiftSummary;
 }
 
 export interface ProblemDetails {

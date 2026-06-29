@@ -18,6 +18,10 @@ frontend/.angular/cache
 frontend/coverage/
 frontend/.sass-cache/
 frontend/__screenshots__/
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+frontend/playwright/.cache/
 npm-debug.log*
 yarn-error.log*
 

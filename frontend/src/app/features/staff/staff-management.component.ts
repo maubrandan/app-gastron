@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService } from '../../core/auth/auth.service';
+import { extractApiError } from '../../core/http/extract-api-error';
 import { AppRole, StaffUser } from '../../shared/models/auth.models';
 import { LoadingSkeletonComponent } from '../../shared/ui/loading-skeleton.component';
 
@@ -203,9 +203,6 @@ export class StaffManagementComponent implements OnInit {
   }
 
   private extractError(error: unknown, fallback: string): string {
-    if (error instanceof HttpErrorResponse && error.error?.error) {
-      return String(error.error.error);
-    }
-    return fallback;
+    return extractApiError(error, fallback);
   }
 }

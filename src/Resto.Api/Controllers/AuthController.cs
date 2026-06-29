@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Resto.Api.Infrastructure;
 using Resto.Application.Auth.CreateStaff;
 using Resto.Application.Auth.DeactivateStaff;
 using Resto.Application.Auth.GetCurrentUser;
@@ -27,7 +28,7 @@ public sealed class AuthController : ControllerBase
     {
         var result = await _sender.Send(new LoginCommand(request.Email, request.Password), cancellationToken);
         if (result is null)
-            return Unauthorized(new { error = "Email o contraseña incorrectos." });
+            return this.UnauthorizedError("Email o contraseña incorrectos.");
 
         return Ok(result);
     }
@@ -59,7 +60,7 @@ public sealed class AuthController : ControllerBase
             cancellationToken);
 
         if (!result.IsSuccess)
-            return BadRequest(new { error = result.Error });
+            return this.BusinessError(result.Error!);
 
         return Ok(new { userId = result.Value });
     }
@@ -70,7 +71,7 @@ public sealed class AuthController : ControllerBase
     {
         var result = await _sender.Send(new DeactivateStaffUserCommand(userId), cancellationToken);
         if (!result.IsSuccess)
-            return BadRequest(new { error = result.Error });
+            return this.BusinessError(result.Error!);
 
         return Ok();
     }

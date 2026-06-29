@@ -1,6 +1,7 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { OrderDetail, ReceiptType } from '../../shared/models/resto.models';
+import { paymentMethodLabel } from '../utils/payment-method-label';
 
 @Component({
   selector: 'app-receipt-print',
@@ -57,6 +58,9 @@ import { OrderDetail, ReceiptType } from '../../shared/models/resto.models';
         @if (type() === 'bill' && order().closedAt) {
           <p>Cierre: {{ order().closedAt | date: 'dd/MM/yyyy HH:mm' }}</p>
           <p>Ticket: {{ order().id.slice(0, 8).toUpperCase() }}</p>
+          @if (order().paymentMethod) {
+            <p>Pago: {{ paymentLabel() }}</p>
+          }
         }
       </div>
 
@@ -107,6 +111,8 @@ export class ReceiptPrintComponent {
   readonly printedAt = input(new Date());
 
   readonly typeLabel = computed(() => (this.type() === 'kitchen' ? 'Comanda de cocina' : 'Ticket de cuenta'));
+
+  readonly paymentLabel = computed(() => paymentMethodLabel(this.order().paymentMethod));
 
   readonly groupedLines = computed(() => {
     const groups = new Map<string, OrderDetail['lines']>();

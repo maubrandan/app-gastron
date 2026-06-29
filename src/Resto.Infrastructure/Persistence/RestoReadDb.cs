@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Resto.Application.Common.Helpers;
 using Resto.Application.Common.Interfaces;
+using Resto.Domain.CashRegister;
 using Resto.Domain.Orders;
+using Resto.Domain.Payments;
 using Resto.Infrastructure.Persistence;
 
 namespace Resto.Infrastructure.Persistence;
@@ -19,21 +21,48 @@ public sealed class RestoReadDb : IRestoReadDb
         string? category = null,
         CancellationToken cancellationToken = default)
     {
-        var orders = await _context.Orders
+        var orderHeaders = await _context.Orders
             .AsNoTracking()
-            .Where(o => o.Status == OrderStatus.ConfirmadoEnCocina)
+            .Where(o => o.Status == OrderStatus.ConfirmadoEnCocina && o.SentToKitchenAt != null)
             .OrderBy(o => o.SentToKitchenAt)
-            .Select(o => o.Id)
+            .Select(o => new { o.Id, o.TableNumber, SentToKitchenAt = o.SentToKitchenAt!.Value })
             .ToListAsync(cancellationToken);
 
-        var result = new List<KitchenOrderDto>();
+        if (orderHeaders.Count == 0)
+            return [];
 
-        foreach (var orderId in orders)
+        var orderIds = orderHeaders.Select(o => o.Id).ToList();
+
+        var lineRows = await (
+            from line in _context.OrderLines.AsNoTracking()
+            join product in _context.Products.AsNoTracking() on line.ProductId equals product.Id
+            where orderIds.Contains(line.OrderId)
+            select new
+            {
+                line.OrderId,
+                Line = new KitchenOrderLineDto(
+                    line.Id,
+                    product.Name,
+                    line.Quantity.Value,
+                    line.Notes,
+                    product.Category),
+            })
+            .ToListAsync(cancellationToken);
+
+        var linesByOrder = lineRows
+            .GroupBy(x => x.OrderId)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<KitchenOrderLineDto>)g.Select(x => x.Line).ToList());
+
+        var result = new List<KitchenOrderDto>(orderHeaders.Count);
+
+        foreach (var header in orderHeaders)
         {
-            var dto = await GetKitchenOrderByIdAsync(orderId, cancellationToken);
-            if (dto is null)
-                continue;
+            if (!linesByOrder.TryGetValue(header.Id, out var lines))
+                lines = [];
 
+            var dto = new KitchenOrderDto(header.Id, header.TableNumber, header.SentToKitchenAt, lines);
             var filtered = FilterKitchenOrderByCategory(dto, category);
             if (filtered is not null)
                 result.Add(filtered);
@@ -128,6 +157,7 @@ public sealed class RestoReadDb : IRestoReadDb
             return null;
 
         var lines = await BuildOrderLinesAsync(orderId, cancellationToken);
+        var paymentMethod = await GetPaymentMethodForOrderAsync(orderId, cancellationToken);
 
         return new OrderDetailDto(
             order.Id,
@@ -138,6 +168,7 @@ public sealed class RestoReadDb : IRestoReadDb
             order.CreatedAt,
             order.SentToKitchenAt,
             order.ClosedAt,
+            paymentMethod,
             lines);
     }
 
@@ -193,20 +224,93 @@ public sealed class RestoReadDb : IRestoReadDb
         DateTime rangeEndUtc,
         CancellationToken cancellationToken = default)
     {
-        return await _context.Orders
-            .AsNoTracking()
-            .Where(o =>
-                o.Status == OrderStatus.Cerrado
+        return await (
+            from o in _context.Orders.AsNoTracking()
+            join p in _context.Payments.AsNoTracking() on o.Id equals p.OrderId into payments
+            from payment in payments.DefaultIfEmpty()
+            where o.Status == OrderStatus.Cerrado
                 && o.ClosedAt >= rangeStartUtc
-                && o.ClosedAt < rangeEndUtc)
-            .OrderByDescending(o => o.ClosedAt)
-            .Select(o => new ClosedOrderSummaryDto(
+                && o.ClosedAt < rangeEndUtc
+            orderby o.ClosedAt descending
+            select new ClosedOrderSummaryDto(
                 o.Id,
                 o.TableNumber,
                 o.Total.Amount,
                 o.ClosedAt!.Value,
-                o.Lines.Count))
+                o.Lines.Count,
+                payment != null ? payment.Method.ToString() : null))
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<CashShiftDetailDto?> GetCurrentCashShiftAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var shift = await _context.CashRegisterShifts
+            .AsNoTracking()
+            .Where(s => s.Status == CashShiftStatus.Open)
+            .Select(s => new
+            {
+                s.Id,
+                s.OpenedAt,
+                s.OpenedByUserId,
+                OpeningFloat = s.OpeningFloat.Amount,
+                s.Status,
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (shift is null)
+            return null;
+
+        var summary = await BuildShiftSummaryAsync(shift.Id, shift.OpeningFloat, cancellationToken);
+
+        return new CashShiftDetailDto(
+            shift.Id,
+            shift.OpenedAt,
+            shift.OpenedByUserId,
+            shift.OpeningFloat,
+            shift.Status.ToString(),
+            summary);
+    }
+
+    private async Task<string?> GetPaymentMethodForOrderAsync(
+        Guid orderId,
+        CancellationToken cancellationToken) =>
+        await _context.Payments
+            .AsNoTracking()
+            .Where(p => p.OrderId == orderId)
+            .Select(p => p.Method.ToString())
+            .FirstOrDefaultAsync(cancellationToken);
+
+    private async Task<CashShiftSummaryDto> BuildShiftSummaryAsync(
+        Guid shiftId,
+        decimal openingFloat,
+        CancellationToken cancellationToken)
+    {
+        var payments = await _context.Payments
+            .AsNoTracking()
+            .Where(p => p.CashRegisterShiftId == shiftId)
+            .Select(p => new { p.Method, Amount = p.Amount.Amount })
+            .ToListAsync(cancellationToken);
+
+        var totalCash = payments
+            .Where(p => p.Method == PaymentMethod.Cash)
+            .Sum(p => p.Amount);
+
+        var totalCard = payments
+            .Where(p => p.Method == PaymentMethod.Card)
+            .Sum(p => p.Amount);
+
+        var totalTransfer = payments
+            .Where(p => p.Method == PaymentMethod.Transfer)
+            .Sum(p => p.Amount);
+
+        return new CashShiftSummaryDto(
+            payments.Count,
+            totalCash,
+            totalCard,
+            totalTransfer,
+            totalCash + totalCard + totalTransfer,
+            openingFloat + totalCash);
     }
 
     private async Task<IReadOnlyList<KitchenOrderLineDto>> BuildKitchenLinesAsync(

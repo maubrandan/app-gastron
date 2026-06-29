@@ -4,16 +4,37 @@ Sistema de punto de venta para restaurantes (.NET 10 + Angular 21).
 
 ## Desarrollo local
 
-### Backend
+### Opción A — Docker Compose (recomendado)
+
+Requiere [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+
+```bash
+docker compose up --build
+```
+
+- API: `http://localhost:5019`
+- SQL Server: `localhost:1433` (usuario `sa`, contraseña `Resto_Dev123!`)
+
+La API aplica migraciones y seed al iniciar. Para el frontend, en otra terminal:
+
+```bash
+cd frontend
+npm install
+npx ng serve
+```
+
+### Opción B — herramientas locales
+
+#### Backend
 
 ```bash
 cd src/Resto.Api
 dotnet run
 ```
 
-API: `http://localhost:5019`
+API: `http://localhost:5019` (requiere SQL Server LocalDB)
 
-### Frontend
+#### Frontend
 
 ```bash
 cd frontend
@@ -22,6 +43,60 @@ npx ng serve
 ```
 
 App: `http://localhost:4200`
+
+## Tests y CI
+
+```bash
+dotnet test Resto.slnx
+cd frontend && npm run build
+```
+
+Los tests de integración usan SQL Server LocalDB en Windows, o la variable `RESTO_TEST_CONNECTION` en CI.
+
+### E2E (Playwright, modo demo)
+
+```bash
+cd frontend
+npm install
+npx playwright install chromium
+npm run e2e
+```
+
+Los tests levantan `ng serve --configuration demo` automáticamente (datos en memoria, sin backend).
+
+## Producción
+
+### Variables de entorno requeridas
+
+| Variable | Descripción |
+|----------|-------------|
+| `ConnectionStrings__DefaultConnection` | Cadena SQL Server |
+| `Jwt__Key` | Clave secreta JWT (mín. 32 caracteres) |
+| `Jwt__Issuer` | Emisor del token (default: `Resto.Api`) |
+| `Jwt__Audience` | Audiencia del token (default: `Resto.App`) |
+| `Cors__Origins__0` | Origen del frontend (ej. `https://app.tudominio.com`) |
+
+Opcional: `Business__TimeZoneId` (default: `America/Argentina/Buenos_Aires`).
+
+### Health check
+
+```bash
+curl http://localhost:5019/health
+```
+
+Respuesta esperada: `Healthy` con verificación de base de datos.
+
+### Logging
+
+En `Production` los logs se emiten en **JSON** a consola (con `CorrelationId` por request via header `X-Correlation-Id`).
+
+### Docker
+
+```bash
+docker compose up --build
+```
+
+Para producción real, reemplazá secretos en `docker-compose.yml` o usá un archivo `.env` (no commitear).
 
 ## Usuarios demo (solo desarrollo)
 

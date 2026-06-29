@@ -26,6 +26,8 @@ public interface IRestoReadDb
         DateTime rangeStartUtc,
         DateTime rangeEndUtc,
         CancellationToken cancellationToken = default);
+
+    Task<CashShiftDetailDto?> GetCurrentCashShiftAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed record KitchenOrderLineDto(Guid Id, string ProductName, int Quantity, string? Notes, string Category);
@@ -61,6 +63,7 @@ public sealed record OrderDetailDto(
     DateTime CreatedAt,
     DateTime? SentToKitchenAt,
     DateTime? ClosedAt,
+    string? PaymentMethod,
     IReadOnlyList<OrderLineDto> Lines);
 
 public sealed record ProductDto(
@@ -83,4 +86,21 @@ public sealed record ClosedOrderSummaryDto(
     int TableNumber,
     decimal Total,
     DateTime ClosedAt,
-    int LineCount);
+    int LineCount,
+    string? PaymentMethod);
+
+public sealed record CashShiftDetailDto(
+    Guid Id,
+    DateTime OpenedAt,
+    Guid OpenedByUserId,
+    decimal OpeningFloat,
+    string Status,
+    CashShiftSummaryDto Summary);
+
+public sealed record CashShiftSummaryDto(
+    int PaymentCount,
+    decimal TotalCash,
+    decimal TotalCard,
+    decimal TotalTransfer,
+    decimal TotalRevenue,
+    decimal ExpectedCash);

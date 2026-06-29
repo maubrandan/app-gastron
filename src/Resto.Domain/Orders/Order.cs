@@ -87,8 +87,8 @@ public sealed class Order : AggregateRoot
 
     private void EnsureModifiable()
     {
-        if (Status == OrderStatus.Cerrado)
-            throw new DomainException("Un pedido cerrado no puede ser modificado.");
+        if (Status != OrderStatus.Borrador)
+            throw new DomainException("Solo se pueden modificar pedidos en borrador.");
     }
 
     private void RecalculateTotal()

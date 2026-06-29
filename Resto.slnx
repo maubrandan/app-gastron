@@ -6,6 +6,8 @@
     <Project Path="src/Resto.Infrastructure/Resto.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Resto.Api.IntegrationTests/Resto.Api.IntegrationTests.csproj" />
+    <Project Path="tests/Resto.Application.Tests/Resto.Application.Tests.csproj" />
     <Project Path="tests/Resto.Domain.Tests/Resto.Domain.Tests.csproj" />
   </Folder>
 </Solution>

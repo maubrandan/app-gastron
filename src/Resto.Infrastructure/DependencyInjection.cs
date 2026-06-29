@@ -22,8 +22,11 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        var connectionString = configuration.GetConnectionString("DefaultConnection")
+            ?? throw new InvalidOperationException("La cadena de conexión DefaultConnection es obligatoria.");
+
         services.AddDbContext<RestoDbContext>(options =>
-            options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
+            options.UseSqlServer(connectionString));
 
         services.Configure<JwtSettings>(configuration.GetSection(JwtSettings.SectionName));
 
@@ -96,6 +99,8 @@ public static class DependencyInjection
         services.AddScoped<IOrderRepository, OrderRepository>();
         services.AddScoped<ITableRepository, TableRepository>();
         services.AddScoped<IProductRepository, ProductRepository>();
+        services.AddScoped<ICashRegisterShiftRepository, CashRegisterShiftRepository>();
+        services.AddScoped<IPaymentRepository, PaymentRepository>();
         services.AddScoped<IRestoReadDb, RestoReadDb>();
         services.AddScoped<IEfConcurrencyHelper, EfConcurrencyHelper>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();

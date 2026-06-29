@@ -1,6 +1,7 @@
 using MediatR;
 using Resto.Application.Common.Interfaces;
 using Resto.Application.Common.Models;
+using Resto.Domain.Payments;
 
 namespace Resto.Application.Orders.CloseAndBill;
 
@@ -8,7 +9,8 @@ public sealed record CloseAndBillOrderCommand(
     Guid OrderId,
     byte[] OrderRowVersion,
     byte[] TableRowVersion,
-    Guid ClosedByUserId
+    Guid ClosedByUserId,
+    PaymentMethod PaymentMethod
 ) : IRequest<Result<Guid>>;
 
 public sealed class CloseAndBillOrderCommandHandler
@@ -16,17 +18,23 @@ public sealed class CloseAndBillOrderCommandHandler
 {
     private readonly IOrderRepository _orderRepository;
     private readonly ITableRepository _tableRepository;
+    private readonly ICashRegisterShiftRepository _shiftRepository;
+    private readonly IPaymentRepository _paymentRepository;
     private readonly IEfConcurrencyHelper _concurrencyHelper;
     private readonly IUnitOfWork _unitOfWork;
 
     public CloseAndBillOrderCommandHandler(
         IOrderRepository orderRepository,
         ITableRepository tableRepository,
+        ICashRegisterShiftRepository shiftRepository,
+        IPaymentRepository paymentRepository,
         IEfConcurrencyHelper concurrencyHelper,
         IUnitOfWork unitOfWork)
     {
         _orderRepository = orderRepository;
         _tableRepository = tableRepository;
+        _shiftRepository = shiftRepository;
+        _paymentRepository = paymentRepository;
         _concurrencyHelper = concurrencyHelper;
         _unitOfWork = unitOfWork;
     }
@@ -43,10 +51,23 @@ public sealed class CloseAndBillOrderCommandHandler
         if (table is null)
             return Result<Guid>.Failure("Mesa no encontrada.");
 
+        var shift = await _shiftRepository.GetOpenShiftAsync(cancellationToken);
+        if (shift is null)
+            return Result<Guid>.Failure("No hay turno de caja abierto. Abrí un turno antes de facturar.");
+
         _concurrencyHelper.StampRowVersion(order, request.OrderRowVersion);
         _concurrencyHelper.StampRowVersion(table, request.TableRowVersion);
 
         order.CloseAndBill(request.ClosedByUserId);
+
+        var payment = Payment.Register(
+            order.Id,
+            shift.Id,
+            request.PaymentMethod,
+            order.Total,
+            request.ClosedByUserId);
+
+        await _paymentRepository.AddAsync(payment, cancellationToken);
         table.Release();
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);

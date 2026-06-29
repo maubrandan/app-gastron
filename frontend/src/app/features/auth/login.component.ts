@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService } from '../../core/auth/auth.service';
+import { extractApiError } from '../../core/http/extract-api-error';
 import { environment } from '../../../environments/environment';
 
 @Component({
@@ -97,13 +97,9 @@ export class LoginComponent {
     try {
       await this.auth.login(this.form.getRawValue().email, this.form.getRawValue().password);
     } catch (error) {
-      const message =
-        error instanceof HttpErrorResponse && error.error?.error
-          ? String(error.error.error)
-          : error instanceof Error
-            ? error.message
-            : 'No se pudo iniciar sesión. Verificá tus credenciales.';
-      this.errorMessage.set(message);
+      this.errorMessage.set(
+        extractApiError(error, 'No se pudo iniciar sesión. Verificá tus credenciales.'),
+      );
     } finally {
       this.submitting.set(false);
     }

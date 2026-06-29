@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Resto.Api.Infrastructure;
 using Resto.Application.Products.CreateProduct;
 using Resto.Application.Products.DeactivateProduct;
 using Resto.Application.Products.Queries;
@@ -44,7 +45,7 @@ public sealed class ProductsController : ControllerBase
             cancellationToken);
 
         if (!result.IsSuccess)
-            return BadRequest(new { error = result.Error });
+            return this.BusinessError(result.Error!);
 
         return Ok(new { productId = result.Value });
     }
@@ -61,7 +62,7 @@ public sealed class ProductsController : ControllerBase
             cancellationToken);
 
         if (!result.IsSuccess)
-            return BadRequest(new { error = result.Error });
+            return this.BusinessError(result.Error!);
 
         return Ok(new { productId = result.Value });
     }
@@ -73,7 +74,7 @@ public sealed class ProductsController : ControllerBase
         var result = await _sender.Send(new DeactivateProductCommand(productId), cancellationToken);
 
         if (!result.IsSuccess)
-            return BadRequest(new { error = result.Error });
+            return this.BusinessError(result.Error!);
 
         return Ok(new { productId = result.Value });
     }

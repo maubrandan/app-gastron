@@ -53,6 +53,43 @@ public class OrderTests
     }
 
     [Fact]
+    public void ConfirmForKitchen_WhenNotBorrador_ThrowsDomainException()
+    {
+        var order = CreateOrderWithLine();
+        order.ConfirmForKitchen();
+
+        var act = () => order.ConfirmForKitchen();
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("Solo se pueden confirmar pedidos en borrador.");
+    }
+
+    [Fact]
+    public void AddLine_WhenConfirmadoEnCocina_ThrowsDomainException()
+    {
+        var order = CreateOrderWithLine();
+        order.ConfirmForKitchen();
+
+        var act = () => order.AddLine(Guid.NewGuid(), Quantity.Create(1), Money.Create(10m), null);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("Solo se pueden modificar pedidos en borrador.");
+    }
+
+    [Fact]
+    public void RemoveLine_WhenConfirmadoEnCocina_ThrowsDomainException()
+    {
+        var order = CreateOrderWithLine();
+        var lineId = order.Lines.First().Id;
+        order.ConfirmForKitchen();
+
+        var act = () => order.RemoveLine(lineId);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("Solo se pueden modificar pedidos en borrador.");
+    }
+
+    [Fact]
     public void AddLine_WhenClosed_ThrowsDomainException()
     {
         var order = CreateOrderWithLine();
@@ -62,7 +99,7 @@ public class OrderTests
         var act = () => order.AddLine(Guid.NewGuid(), Quantity.Create(1), Money.Create(10m), null);
 
         act.Should().Throw<DomainException>()
-            .WithMessage("Un pedido cerrado no puede ser modificado.");
+            .WithMessage("Solo se pueden modificar pedidos en borrador.");
     }
 
     [Fact]

@@ -3,10 +3,12 @@ import {
   ClosedOrderSummary,
   CreateOrderResponse,
   DailySummary,
+  CashShiftDetail,
   KitchenOrder,
   KitchenOrderLine,
   OrderDetail,
   OrderLine,
+  PaymentMethod,
   Product,
   TableState,
 } from '../../shared/models/resto.models';
@@ -23,6 +25,7 @@ interface InternalOrder {
   createdAt: string;
   sentToKitchenAt: string | null;
   closedAt: string | null;
+  paymentMethod: PaymentMethod | null;
   lines: OrderLine[];
 }
 
@@ -38,6 +41,7 @@ export class DemoStoreService {
   private orders = new Map<string, InternalOrder>();
   private kitchenOrders: KitchenOrder[] = [];
   private closedOrders: ClosedOrderSummary[] = [];
+  private currentShift: CashShiftDetail | null = null;
 
   constructor() {
     this.reset();
@@ -53,6 +57,92 @@ export class DemoStoreService {
     this.orders.clear();
     this.kitchenOrders = [];
     this.closedOrders = [];
+    this.openDefaultShift();
+  }
+
+  getCurrentCashShift(): CashShiftDetail | null {
+    return this.currentShift ? { ...this.currentShift, summary: { ...this.currentShift.summary } } : null;
+  }
+
+  openCashShift(openingFloat: number): string {
+    if (this.currentShift?.status === 'Open') {
+      throw new Error('Ya hay un turno de caja abierto.');
+    }
+
+    const id = crypto.randomUUID();
+    this.currentShift = {
+      id,
+      openedAt: new Date().toISOString(),
+      openedByUserId: crypto.randomUUID(),
+      openingFloat,
+      status: 'Open',
+      summary: this.emptyShiftSummary(openingFloat),
+    };
+    return id;
+  }
+
+  closeCashShift(shiftId: string, closingCashCounted: number): void {
+    if (!this.currentShift || this.currentShift.id !== shiftId) {
+      throw new Error('Turno de caja no encontrado.');
+    }
+    if (this.currentShift.status !== 'Open') {
+      throw new Error('El turno de caja ya está cerrado.');
+    }
+
+    this.currentShift = {
+      ...this.currentShift,
+      status: 'Closed',
+      summary: {
+        ...this.currentShift.summary,
+      },
+    };
+    this.currentShift = null;
+    void closingCashCounted;
+  }
+
+  private openDefaultShift(): void {
+    this.openCashShift(5000);
+  }
+
+  private emptyShiftSummary(openingFloat: number) {
+    return {
+      paymentCount: 0,
+      totalCash: 0,
+      totalCard: 0,
+      totalTransfer: 0,
+      totalRevenue: 0,
+      expectedCash: openingFloat,
+    };
+  }
+
+  private refreshShiftSummary(): void {
+    if (!this.currentShift) return;
+
+    const payments = this.closedOrders
+      .map((o) => ({ method: o.paymentMethod, total: o.total }))
+      .filter((p) => p.method);
+
+    const totalCash = payments
+      .filter((p) => p.method === 'Cash')
+      .reduce((sum, p) => sum + p.total, 0);
+    const totalCard = payments
+      .filter((p) => p.method === 'Card')
+      .reduce((sum, p) => sum + p.total, 0);
+    const totalTransfer = payments
+      .filter((p) => p.method === 'Transfer')
+      .reduce((sum, p) => sum + p.total, 0);
+
+    this.currentShift = {
+      ...this.currentShift,
+      summary: {
+        paymentCount: payments.length,
+        totalCash,
+        totalCard,
+        totalTransfer,
+        totalRevenue: totalCash + totalCard + totalTransfer,
+        expectedCash: this.currentShift.openingFloat + totalCash,
+      },
+    };
   }
 
   findUserByEmail(email: string): DemoUser | undefined {
@@ -193,6 +283,7 @@ export class DemoStoreService {
       createdAt: new Date().toISOString(),
       sentToKitchenAt: null,
       closedAt: null,
+      paymentMethod: null,
       lines: [],
     };
 
@@ -281,7 +372,16 @@ export class DemoStoreService {
     this.emitTable(table);
   }
 
-  closeAndBill(orderId: string, orderRowVersion: string, tableRowVersion: string): void {
+  closeAndBill(
+    orderId: string,
+    orderRowVersion: string,
+    tableRowVersion: string,
+    paymentMethod: PaymentMethod,
+  ): void {
+    if (!this.currentShift || this.currentShift.status !== 'Open') {
+      throw new Error('No hay turno de caja abierto. Abrí un turno antes de facturar.');
+    }
+
     const order = this.getMutableOrder(orderId, orderRowVersion);
     if (order.status !== 'ConfirmadoEnCocina') {
       throw new Error('Solo se pueden cerrar pedidos confirmados en cocina.');
@@ -292,6 +392,7 @@ export class DemoStoreService {
 
     order.status = 'Cerrado';
     order.closedAt = new Date().toISOString();
+    order.paymentMethod = paymentMethod;
     order.rowVersion = this.nextVersion();
 
     this.kitchenOrders = this.kitchenOrders.filter((k) => k.id !== orderId);
@@ -303,7 +404,10 @@ export class DemoStoreService {
       total: order.total,
       closedAt: order.closedAt,
       lineCount: order.lines.length,
+      paymentMethod,
     });
+
+    this.refreshShiftSummary();
 
     table.status = 'Libre';
     table.activeOrderId = null;
@@ -337,6 +441,7 @@ export class DemoStoreService {
       createdAt: order.createdAt,
       sentToKitchenAt: order.sentToKitchenAt,
       closedAt: order.closedAt,
+      paymentMethod: order.paymentMethod,
       lines: order.lines.map((l) => ({ ...l })),
     };
   }

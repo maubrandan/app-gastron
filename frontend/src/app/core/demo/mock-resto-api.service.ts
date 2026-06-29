@@ -3,8 +3,10 @@ import {
   ClosedOrderSummary,
   CreateOrderResponse,
   DailySummary,
+  CashShiftDetail,
   KitchenOrder,
   OrderDetail,
+  PaymentMethod,
   Product,
   TableState,
 } from '../../shared/models/resto.models';
@@ -103,9 +105,35 @@ export class MockRestoApiService {
     }
   }
 
-  closeAndBill(orderId: string, orderRowVersion: string, tableRowVersion: string): Promise<void> {
+  closeAndBill(
+    orderId: string,
+    orderRowVersion: string,
+    tableRowVersion: string,
+    paymentMethod: PaymentMethod,
+  ): Promise<void> {
     try {
-      this.store.closeAndBill(orderId, orderRowVersion, tableRowVersion);
+      this.store.closeAndBill(orderId, orderRowVersion, tableRowVersion, paymentMethod);
+      return Promise.resolve();
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  }
+
+  getCurrentCashShift(): Promise<CashShiftDetail | null> {
+    return Promise.resolve(this.store.getCurrentCashShift());
+  }
+
+  openCashShift(openingFloat: number): Promise<string> {
+    try {
+      return Promise.resolve(this.store.openCashShift(openingFloat));
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  }
+
+  closeCashShift(shiftId: string, closingCashCounted: number): Promise<void> {
+    try {
+      this.store.closeCashShift(shiftId, closingCashCounted);
       return Promise.resolve();
     } catch (error) {
       return Promise.reject(error);

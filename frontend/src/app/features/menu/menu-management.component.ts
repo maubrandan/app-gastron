@@ -1,8 +1,8 @@
 import { DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { HttpErrorResponse } from '@angular/common/http';
 import { RestoApiService } from '../../core/api/resto-api.service';
+import { HttpErrorReporter } from '../../core/http/http-error-reporter.service';
 import { NotificationService } from '../../core/notifications/notification.service';
 import { Product } from '../../shared/models/resto.models';
 import { LoadingSkeletonComponent } from '../../shared/ui/loading-skeleton.component';
@@ -149,6 +149,7 @@ import { LoadingSkeletonComponent } from '../../shared/ui/loading-skeleton.compo
 export class MenuManagementComponent implements OnInit {
   private readonly api = inject(RestoApiService);
   private readonly notifications = inject(NotificationService);
+  private readonly httpErrors = inject(HttpErrorReporter);
   private readonly fb = inject(FormBuilder);
 
   readonly products = signal<Product[]>([]);
@@ -236,10 +237,6 @@ export class MenuManagementComponent implements OnInit {
   }
 
   private handleError(error: unknown, fallback: string): void {
-    const message =
-      error instanceof HttpErrorResponse && error.error?.error
-        ? String(error.error.error)
-        : fallback;
-    this.notifications.showError(message);
+    this.httpErrors.report(error, fallback);
   }
 }

@@ -19,5 +19,9 @@ public sealed class CloseAndBillOrderCommandValidator : AbstractValidator<CloseA
             .NotNull()
             .NotEmpty()
             .WithMessage("La versión de concurrencia de la mesa es obligatoria.");
+
+        RuleFor(x => x.PaymentMethod)
+            .IsInEnum()
+            .WithMessage("El medio de pago no es válido.");
     }
 }
