@@ -68,7 +68,7 @@ import { Product } from '../models/resto.models';
             type="button"
             class="touch-target rounded-[var(--radius-card)] border border-slate-200 bg-white px-3 py-2 text-left shadow-card transition hover:border-action-primary/40 hover:shadow-elevated disabled:opacity-50"
             [disabled]="disabled()"
-            (click)="addProduct.emit({ productId: product.id, quantity: quantity(), notes: notes || null })"
+            (click)="selectProduct(product)"
           >
             {{ product.name }}
             <span class="block text-xs text-slate-500">{{ product.price | number: '1.2-2' }}</span>
@@ -114,5 +114,14 @@ export class ProductPickerComponent {
 
   incrementQuantity(): void {
     this.quantity.update((q) => Math.min(99, q + 1));
+  }
+
+  selectProduct(product: Product): void {
+    this.addProduct.emit({
+      productId: product.id,
+      quantity: this.quantity(),
+      notes: this.notes || null,
+    });
+    this.quantity.set(1);
   }
 }
